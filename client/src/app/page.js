@@ -94,7 +94,7 @@ export default function Home() {
       // 設置請求超時
       const timeoutId = setTimeout(() => controller.abort(), 60000); // 60秒超時
 
-      const response = await fetch("http://localhost:3001/api/v1/tts", {
+      const response = await fetch("https://ai-voice-generative-news-server.vercel.app/api/v1/tts", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -236,7 +236,7 @@ export default function Home() {
       // 顯示加載中提示
       setLoading(true);
 
-      const response = await fetch("http://localhost:3001/api/v1/news/anue");
+      const response = await fetch("https://ai-voice-generative-news-server.vercel.app/api/v1/news/anue");
 
       if (!response.ok) {
         throw new Error(`HTTP 請求發生錯誤: ${response.status}`);
@@ -277,7 +277,11 @@ export default function Home() {
 
     try {
       const response = await fetch(
-        "http://localhost:3001/api/v1/database/anue"
+        // 本地環境
+        // "http://localhost:3001/api/v1/database/anue"
+
+        // 替換為 Vercel 部屬的 後端api server
+        "https://ai-voice-generative-news-server.vercel.app/api/v1/database/anue"
       );
 
       if (!response.ok) {
@@ -301,7 +305,7 @@ export default function Home() {
     setIsLoadingVoice(true);
 
     try {
-      const response = await fetch("http://localhost:3001/api/v1/database/anue_voice")
+      const response = await fetch("https://ai-voice-generative-news-server.vercel.app/api/v1/database/anue_voice")
       if (!response.ok) {
         throw new Error(`HTTP 錯誤! 狀態: ${response.status}`);
       }
