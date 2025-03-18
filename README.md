@@ -4,7 +4,7 @@
 
 ## 架構
 
-:::spoiler 整理流程
+整體流程
 ```mermaid
 graph TD
     A[用戶訪問網站] --> B[加載頁面]
@@ -39,9 +39,8 @@ graph TD
     T --> U[存入 Supabase 資料庫]
     U --> C 
 ```
-:::
 
-:::spoiler 系統架構
+系統架構
 ```mermaid
 graph TB
     subgraph "前端 (Next.js)"
@@ -65,9 +64,8 @@ graph TB
     A2 --> B2
     A3 --> C3
 ```
-:::
 
-:::spoiler 數據流程
+數據流程
 ```mermaid
 sequenceDiagram
     participant User as 用戶
@@ -93,7 +91,6 @@ sequenceDiagram
     Server-->>Client: 返回語音 URL
     Client-->>User: 顯示成功訊息和播放選項
 ```
-:::
 
 ## 主要功能
 
