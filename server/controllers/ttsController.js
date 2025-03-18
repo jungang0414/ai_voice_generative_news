@@ -55,6 +55,9 @@ import { supabase } from "../config/supabase.js";
 var subscriptionKey = process.env.SPEECH_CONFIG_API_KEY;
 var serviceRegion = process.env.SPEECH_CONFIG_ROGIN;
 
+// vercel 環境
+const isVercelEnv = process.env.VERCEL === '1';
+
 export const tts_generativeVoice = async (req, res) => {
     const { voice_title, voice_text, downloadPath } = req.body;
 
@@ -81,52 +84,49 @@ export const tts_generativeVoice = async (req, res) => {
         const finalTitle = cleanTitle || "audio";
         const safeFileName = `${finalTitle}_${timestamp}`;
 
-        // 建立暫存目錄路徑 (使用絕對路徑)
-        const tempDir = path.join(process.cwd(), 'temp');
+        // 在 Vercel 中使用 /tmp 目錄
+        let tempDir;
+        if (isVercelEnv) {
+            tempDir = '/tmp';
+        } else {
+            // 建立暫存目錄路徑 (使用絕對路徑)
+            const tempDir = path.join(process.cwd(), 'temp');
+        }
 
         // 確保暫存目錄存在並可寫入
         if (!fs.existsSync(tempDir)) {
-            fs.mkdirSync(tempDir, { recursive: true, mode: 0o755 });
-        } else {
-            // 檢查目錄權限
-            try {
-                await fsAccess(tempDir, fs.constants.W_OK);
-            } catch (err) {
-                console.error(`暫存目錄 ${tempDir} 沒有寫入權限`);
-                throw new Error(`無法寫入暫存目錄: ${err.message}`);
-            }
+            fs.mkdirSync(tempDir, { recursive: true });
         }
 
         // 建立完整的暫存檔案路徑
         const tempFilePath = path.join(tempDir, `${safeFileName}.wav`);
 
-        // 處理下載路徑 (使用絕對路徑)
-        const defaultVoiceDir = path.join(process.cwd(), "voice");
+        // 在本地處理下載路徑
+        let localFilePath = null;
 
-        // 使用提供的路徑或默認路徑
-        const targetDownloadPath = downloadPath
-            ? (path.isAbsolute(downloadPath) ? downloadPath : path.join(process.cwd(), downloadPath))
-            : defaultVoiceDir;
+        if (!isVercelEnv) {
+            // 處理下載路徑 (使用絕對路徑)
+            const defaultVoiceDir = path.join(process.cwd(), "voice");
 
-        // 確保下載目錄存在並可寫入
-        if (!fs.existsSync(targetDownloadPath)) {
-            fs.mkdirSync(targetDownloadPath, { recursive: true, mode: 0o755 });
-        } else {
-            // 檢查目錄權限
-            try {
-                await fsAccess(targetDownloadPath, fs.constants.W_OK);
-            } catch (err) {
-                console.error(`目標目錄 ${targetDownloadPath} 沒有寫入權限`);
-                throw new Error(`無法寫入目標目錄: ${err.message}`);
+            // 使用提供的路徑或默認路徑
+            const targetDownloadPath = downloadPath
+                ? (path.isAbsolute(downloadPath) ? downloadPath : path.join(process.cwd(), downloadPath))
+                : defaultVoiceDir;
+
+            // 確保下載目錄存在
+            if (!fs.existsSync(targetDownloadPath)) {
+                fs.mkdirSync(targetDownloadPath, { recursive: true });
             }
+
+            // 設置本地檔案路徑 (使用不同的檔案名以避免衝突)
+            const localFileName = `${finalTitle}_local_${timestamp}.wav`;
+            const localFilePath = path.join(targetDownloadPath, localFileName);
         }
 
-        // 設置本地檔案路徑 (使用不同的檔案名以避免衝突)
-        const localFileName = `${finalTitle}_local_${timestamp}.wav`;
-        const localFilePath = path.join(targetDownloadPath, localFileName);
-
         console.log("暫存檔案路徑:", tempFilePath);
-        console.log("本地檔案路徑:", localFilePath);
+        if (localFilePath) {
+            console.log("本地檔案路徑:", localFilePath);
+        }
 
         // 設置 Azure 語音合成
         const audioConfig = sdk.AudioConfig.fromAudioFileOutput(tempFilePath);
@@ -187,8 +187,6 @@ export const tts_generativeVoice = async (req, res) => {
 
                 // 檢查檔案大小
                 const stats = await fsStat(generatedFilePath);
-                console.log(`檔案大小: ${stats.size} bytes`);
-
                 if (stats.size === 0) {
                     console.log(`檔案大小為 0，等待完整寫入... (${retryCount + 1}/${maxRetries})`);
                     await new Promise(resolve => setTimeout(resolve, 500)); // 等待 500ms
@@ -211,9 +209,7 @@ export const tts_generativeVoice = async (req, res) => {
             throw new Error(`無法取得有效的語音檔案，已重試 ${maxRetries} 次`);
         }
 
-        console.log(`語音檔案已準備就緒: ${generatedFilePath}`);
-
-        // 讀取檔案內容 (使用 Promise 版本)
+        // 讀取檔案內容
         console.log("正在讀取生成的檔案...");
         const fileBuffer = await fsReadFile(generatedFilePath);
         console.log(`成功讀取檔案，大小: ${fileBuffer.length} bytes`);
@@ -222,22 +218,12 @@ export const tts_generativeVoice = async (req, res) => {
             throw new Error("檔案內容為空");
         }
 
-        // 複製到本地儲存位置 (使用 Promise 版本確保完成)
-        console.log(`正在複製檔案到本地位置: ${localFilePath}`);
-        await fsWriteFile(localFilePath, fileBuffer);
-        console.log("檔案複製完成");
-
-        // 檢查複製後的檔案
-        if (!fs.existsSync(localFilePath)) {
-            throw new Error("複製後的檔案不存在");
+        // 僅在非雲端環境中複製檔案
+        if (!isVercelEnv && localFilePath) {
+            console.log(`正在複製檔案到本地位置: ${localFilePath}`);
+            await fsWriteFile(localFilePath, fileBuffer);
+            console.log("檔案複製完成");
         }
-
-        const localStats = await fsStat(localFilePath);
-        if (localStats.size !== fileBuffer.length) {
-            throw new Error(`複製後的檔案大小不符: ${localStats.size} vs ${fileBuffer.length}`);
-        }
-
-        console.log(`語音檔案已成功保存到本地: ${localFilePath}`);
 
         // 上傳檔案到 Supabase
         let supabaseUrl = null;
@@ -248,11 +234,11 @@ export const tts_generativeVoice = async (req, res) => {
             console.log(`正在上傳檔案到 Supabase: ${supabasePath}`);
             console.log(`上傳檔案大小: ${fileBuffer.length} bytes`);
 
-            // 嘗試上傳到 Supabase (使用正確的 MIME 類型)
+            // 嘗試上傳到 Supabase
             const { data, error } = await supabase.storage
                 .from('voice')
                 .upload(supabasePath, fileBuffer, {
-                    contentType: 'audio/wav; charset=utf-8', // 使用標準 MIME 類型
+                    contentType: 'audio/wav; charset=utf-8',
                     cacheControl: '3600',
                     upsert: true
                 });
@@ -286,14 +272,19 @@ export const tts_generativeVoice = async (req, res) => {
             }
         }
 
-        // 刪除暫存
-        fs.unlinkSync(tempFilePath);
+        // 刪除暫存檔案
+        try {
+            fs.unlinkSync(tempFilePath);
+        } catch (err) {
+            console.error("無法刪除暫存檔案:", err);
+            // 不中斷流程，繼續執行
+        }
 
         // 回應客戶端
         res.json({
             success: true,
             message: "語音生成成功",
-            filePath: localFilePath,
+            filePath: isVercelEnv ? "雲端環境無本地路徑" : localFilePath,
             supabaseUrl: supabaseUrl
         });
 
