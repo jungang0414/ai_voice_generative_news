@@ -39,6 +39,13 @@ export default function Home() {
 
   // 選擇下載路徑
   const handleSelectDirectory = async () => {
+
+    // 若為雲端環境
+    if (window.location.hostname !== 'localhost') {
+      alert("在雲端環境中，音頻將自動儲存到雲端，無需選擇本地路徑。");
+      setDownloadPath("cloud-storage");
+      return;
+    }
     try {
       // 使用 prompt 模擬文件選擇
       const initialPath = downloadPath || "./voice";
