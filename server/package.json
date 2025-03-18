@@ -2,11 +2,11 @@
   "name": "audio_generative",
   "version": "1.0.0",
   "description": "",
-  "main": "server.js",
+  "main": "index.js",
   "type": "module",
   "scripts": {
-    "start": "node ./server/server.js",
-    "server": "nodemon ./server/server.js",
+    "start": "node ./server/index.js",
+    "server": "nodemon ./server/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

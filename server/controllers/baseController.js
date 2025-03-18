@@ -8,7 +8,13 @@ export const get_anue_news = async (req, res) => {
 
         let { data, error } = await supabase
             .from('anue_news')  // 替換為要抓取的資料庫表單
-            .select('*') // 取得全部
+            .select('*')  // 取得全部
+            .order('id', { ascending: false }) // 遞減排序
+
+        if (error) {
+            throw error;
+        }
+
 
         console.log("取得資料庫資料成功!")
         return res.json({ success: true, data });
@@ -37,7 +43,7 @@ export const get_anue_voice = async (req, res) => {
         }
 
         // 過濾出音頻檔案 (wav, mp3等)
-        const audioFiles = fileList.filter(file => 
+        const audioFiles = fileList.filter(file =>
             !file.id.endsWith('/') && // 過濾掉目錄
             (file.name.endsWith('.wav') || file.name.endsWith('.mp3'))
         );
@@ -46,12 +52,12 @@ export const get_anue_voice = async (req, res) => {
         const filesWithUrls = audioFiles.map(file => {
             // 生成完整檔案路徑
             const filePath = `wav/${file.name}`;
-            
+
             // 獲取公開 URL
             const { data: urlData } = supabase.storage
                 .from('voice')
                 .getPublicUrl(filePath);
-                
+
             // 返回包含詳細信息的對象
             return {
                 id: file.id,
@@ -64,10 +70,10 @@ export const get_anue_voice = async (req, res) => {
         });
 
         console.log(`成功獲取 ${filesWithUrls.length} 個音頻檔案`);
-        return res.json({ 
-            success: true, 
+        return res.json({
+            success: true,
             data: filesWithUrls,
-            totalCount: filesWithUrls.length 
+            totalCount: filesWithUrls.length
         });
     } catch (error) {
         console.error("請求出錯:", error);
