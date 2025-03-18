@@ -85,6 +85,12 @@ export default function Home() {
       return;
     }
 
+    // 字數限制
+    if (voice_text.length > 100) {
+      alert("兄台!女俠!手下留情，一次生成字太多我的用量會爆表QQ ")
+      return;
+    }
+
     try {
       // 設置為節流狀態
       setIsGenerativeThrottled(true);
