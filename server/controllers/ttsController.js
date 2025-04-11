@@ -71,17 +71,33 @@ export const tts_generativeVoice = async (req, res) => {
     }
 
     try {
-        // 建立安全的檔案名稱 (更嚴格處理，移除所有可能的特殊字符)
+        // 建立檔案名稱 (根據環境決定處理方式)
         const timestamp = Date.now();
 
-        // 徹底清理檔案名稱，只保留基本字符
-        const cleanTitle = voice_title
-            .replace(/[^\w\s]/g, "") // 只保留英文字母、數字和空格
-            .replace(/\s+/g, "_")    // 將空格替換為底線
-            .substring(0, 20);       // 限制長度
+        let finalTitle;
 
-        // 確保檔案名稱不為空
-        const finalTitle = cleanTitle || "audio";
+        if (isVercelEnv || process.env.STRICT_FILENAME === 'true') {
+            // 雲端環境或特別指定需要嚴格處理的情況
+            // 徹底清理檔案名稱，只保留基本字符
+            const cleanTitle = voice_title
+                .replace(/[^\w\s]/g, "") // 只保留英文字母、數字和空格
+                .replace(/\s+/g, "_")    // 將空格替換為底線
+                .substring(0, 20);       // 限制長度
+
+            // 確保檔案名稱不為空
+            finalTitle = cleanTitle || "audio";
+        } else {
+            // 本地環境，使用原始標題，僅做基本處理
+            finalTitle = voice_title
+                .replace(/[\/\\:*?"<>|]/g, "_") // 僅替換文件系統不允許的字符
+                .substring(0, 50);              // 較寬鬆的長度限制
+
+            // 確保檔案名稱不為空
+            if (!finalTitle.trim()) {
+                finalTitle = "audio";
+            }
+        }
+
         const safeFileName = `${finalTitle}_${timestamp}`;
 
         // 在 Vercel 中使用 /tmp 目錄
@@ -90,7 +106,7 @@ export const tts_generativeVoice = async (req, res) => {
             tempDir = '/tmp';
         } else {
             // 建立暫存目錄路徑 (使用絕對路徑)
-            const tempDir = path.join(process.cwd(), 'temp');
+            tempDir = path.join(process.cwd(), 'temp');
         }
 
         // 確保暫存目錄存在並可寫入
@@ -120,7 +136,7 @@ export const tts_generativeVoice = async (req, res) => {
 
             // 設置本地檔案路徑 (使用不同的檔案名以避免衝突)
             const localFileName = `${finalTitle}_local_${timestamp}.wav`;
-            const localFilePath = path.join(targetDownloadPath, localFileName);
+            localFilePath = path.join(targetDownloadPath, localFileName);
         }
 
         console.log("暫存檔案路徑:", tempFilePath);
@@ -225,51 +241,58 @@ export const tts_generativeVoice = async (req, res) => {
             console.log("檔案複製完成");
         }
 
-        // 上傳檔案到 Supabase
+        // 上傳檔案到 Supabase (本地部屬不需上傳)
         let supabaseUrl = null;
-        try {
-            // 使用更簡單的檔案名稱 (純數字，避免任何特殊字符)
-            const supabasePath = `wav/${timestamp}.wav`;
 
-            console.log(`正在上傳檔案到 Supabase: ${supabasePath}`);
-            console.log(`上傳檔案大小: ${fileBuffer.length} bytes`);
+        const shouldUploadToSupabase = isVercelEnv || process.env.UPLOAD_TO_SUPABASE === true;
 
-            // 嘗試上傳到 Supabase
-            const { data, error } = await supabase.storage
-                .from('voice')
-                .upload(supabasePath, fileBuffer, {
-                    contentType: 'audio/wav; charset=utf-8',
-                    cacheControl: '3600',
-                    upsert: true
-                });
+        if (shouldUploadToSupabase) {
+            try {
+                // 使用更簡單的檔案名稱 (純數字，避免任何特殊字符)
+                const supabasePath = `wav/${timestamp}.wav`;
 
-            if (error) {
-                throw error;
+                console.log(`正在上傳檔案到 Supabase: ${supabasePath}`);
+                console.log(`上傳檔案大小: ${fileBuffer.length} bytes`);
+
+                // 嘗試上傳到 Supabase
+                const { data, error } = await supabase.storage
+                    .from('voice')
+                    .upload(supabasePath, fileBuffer, {
+                        contentType: 'audio/wav; charset=utf-8',
+                        cacheControl: '3600',
+                        upsert: true
+                    });
+
+                if (error) {
+                    throw error;
+                }
+
+                console.log("檔案上傳成功，獲取公共 URL...");
+
+                // 獲取公共 URL
+                const { data: urlData } = supabase.storage
+                    .from('voice')
+                    .getPublicUrl(supabasePath);
+
+                if (!urlData || !urlData.publicUrl) {
+                    throw new Error('無法獲取公共 URL');
+                }
+
+                supabaseUrl = urlData.publicUrl;
+                console.log(`檔案已上傳至 Supabase, URL: ${supabaseUrl}`);
+
+            } catch (supabaseError) {
+                console.error("Supabase 上傳錯誤:", supabaseError);
+
+                // 詳細的錯誤信息，但不中斷處理流程
+                if (supabaseError.statusCode === '403') {
+                    console.log("由於權限問題，檔案未能上傳到雲端。請檢查儲存桶權限設置。");
+                } else {
+                    console.log(`Supabase 上傳出錯: ${supabaseError.message}`);
+                }
             }
-
-            console.log("檔案上傳成功，獲取公共 URL...");
-
-            // 獲取公共 URL
-            const { data: urlData } = supabase.storage
-                .from('voice')
-                .getPublicUrl(supabasePath);
-
-            if (!urlData || !urlData.publicUrl) {
-                throw new Error('無法獲取公共 URL');
-            }
-
-            supabaseUrl = urlData.publicUrl;
-            console.log(`檔案已上傳至 Supabase, URL: ${supabaseUrl}`);
-
-        } catch (supabaseError) {
-            console.error("Supabase 上傳錯誤:", supabaseError);
-
-            // 詳細的錯誤信息，但不中斷處理流程
-            if (supabaseError.statusCode === '403') {
-                console.log("由於權限問題，檔案未能上傳到雲端。請檢查儲存桶權限設置。");
-            } else {
-                console.log(`Supabase 上傳出錯: ${supabaseError.message}`);
-            }
+        } else {
+            console.log("本地環境，跳過 Supabase 上傳步驟");
         }
 
         // 刪除暫存檔案
